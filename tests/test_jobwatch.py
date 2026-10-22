@@ -84,6 +84,16 @@ class CheckSourceTest(unittest.TestCase):
         self.assertNotIn("b", self.state.seen_ids("intern"))
         self.assertEqual(self.state.get_etag("intern"), "e1")
 
+    def test_fans_out_and_tolerates_one_failing_channel(self):
+        self.run_check([listing("a")])
+        with mock.patch.dict("os.environ", {"SLACK_WEBHOOK_URL": "https://h/1, https://h/2"}), \
+             mock.patch.object(main, "fetch_listings", return_value=([listing("a"), listing("b")], "e2")), \
+             mock.patch.object(main.slack, "post", side_effect=[RuntimeError, None]) as post, \
+             mock.patch.object(main.time, "sleep"):
+            main.check_source(SRC, self.state, dry_run=False)
+        self.assertEqual([c[0][0] for c in post.call_args_list], ["https://h/1", "https://h/2"])
+        self.assertIn("b", self.state.seen_ids("intern"))
+
 
 class BuildMessageTest(unittest.TestCase):
     def test_message_contents(self):

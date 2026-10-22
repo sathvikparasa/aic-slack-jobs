@@ -18,7 +18,7 @@ gh workflow run jobwatch                    # trigger a production poll now
 gh workflow run jobwatch -f replay=1        # end-to-end test: re-post newest job per board (state untouched)
 ```
 
-Configuration comes from environment variables (see `.env.example`): `SLACK_WEBHOOK_URL`, the optional per-source overrides `SLACK_WEBHOOK_URL_<KEY>` (where KEY is `Source.key` uppercased), `POLL_INTERVAL_SECONDS`, `MAX_AGE_HOURS`, `STATE_DB`, and `LOG_LEVEL`.
+Configuration comes from environment variables (see `.env.example`): `SLACK_WEBHOOK_URL`, the optional per-source overrides `SLACK_WEBHOOK_URL_<KEY>` (where KEY is `Source.key` uppercased); any of these can hold a comma-separated list of URLs to post to several channels or workspaces, `POLL_INTERVAL_SECONDS`, `MAX_AGE_HOURS`, `STATE_DB`, and `LOG_LEVEL`.
 
 ## Deployment
 
@@ -36,4 +36,4 @@ Production runs on GitHub Actions (`.github/workflows/jobwatch.yml`). It runs `-
 - **Failure semantics:** ids are marked seen one at a time, right after each successful post. If a post fails, the exception escapes before the ETag is saved, so the next cycle re-downloads and retries only the unposted jobs. Keep this ordering when you change the loop.
 - **Adding a board:** append a `Source` to `SOURCES` in `jobwatch/sources.py`. The new board seeds itself on its next poll.
 - **Slack app:** `manifest.json` defines the "LeJob" app (ID `A0CB12Z6SLD`). `assets/icon.png` is its icon, which must be under Slack's upload size limit (the original 2.5 MB file was rejected, so resize to 1024 px). To change only the icon, upload it directly with a multipart POST to `apps.icon.set` (fields `app_id` and `file`), which avoids the rename issue below, and the Slack CLI reads it through `.slack/hooks.json`. Run `slack manifest validate` to check it and `slack app install` to install it. `slack app install` also appends " (local)" to the app name; remove it afterwards with an `apps.manifest.update` API call. The CLI can't create webhook URLs, because Slack only makes one after someone picks a channel in the browser (app settings → Incoming Webhooks).
-- **Slack (`jobwatch/slack.py`):** Block Kit payload for an incoming webhook. Posts are spaced about 1.1 s apart, and a 429 response is retried after its `Retry-After` delay.
+- **Slack (`jobwatch/slack.py`):** Block Kit payload for an incoming webhook. `main.deliver` sends each job to every configured webhook. If one webhook fails, the error is logged and the others still post. Only if every webhook fails is an error raised, so the job is retried, because retrying after a partial success would post it twice in the channels that already got it. Posts are spaced about 1.1 s apart, and a 429 response is retried after its `Retry-After` delay.

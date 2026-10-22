@@ -20,8 +20,28 @@ MAX_AGE_SECONDS = int(os.environ.get("MAX_AGE_HOURS", "72")) * 3600
 SLACK_POST_INTERVAL = 1.1  # Slack webhooks allow ~1 msg/sec
 
 
-def webhook_for(source: Source) -> str | None:
-    return os.environ.get(f"SLACK_WEBHOOK_URL_{source.key.upper()}") or os.environ.get("SLACK_WEBHOOK_URL")
+def webhooks_for(source: Source) -> list[str]:
+    """Webhook URLs for a source. Each env var may hold a comma-separated list (one per channel)."""
+    raw = os.environ.get(f"SLACK_WEBHOOK_URL_{source.key.upper()}") or os.environ.get("SLACK_WEBHOOK_URL") or ""
+    return [u.strip() for u in raw.split(",") if u.strip()]
+
+
+def deliver(webhooks: list[str], msg: dict, dry_run: bool) -> None:
+    """Post to every webhook. A failing channel is logged and skipped so it can't block the
+    others; only when every channel fails do we raise, leaving the job unseen for retry."""
+    if dry_run or not webhooks:
+        log.info("[dry-run] %s", msg["text"])
+        return
+    failures = 0
+    for url in webhooks:
+        try:
+            slack.post(url, msg)
+        except Exception:
+            failures += 1
+            log.exception("Slack post failed for webhook ...%s", url[-6:])
+    if failures == len(webhooks):
+        raise RuntimeError("all Slack webhooks failed")
+    time.sleep(SLACK_POST_INTERVAL)
 
 
 def find_new(listings: list[dict], seen: set[str], now: float) -> list[dict]:
@@ -50,16 +70,11 @@ def check_source(source: Source, state: State, dry_run: bool) -> None:
 
     seen = state.seen_ids(source.key)
     new = find_new(listings, seen, time.time())
-    webhook = webhook_for(source)
+    webhooks = webhooks_for(source)
     log.info("%s: %d new listings", source.key, len(new))
 
     for listing in new:
-        msg = slack.build_message(listing, source.label)
-        if dry_run or not webhook:
-            log.info("[dry-run] %s", msg["text"])
-        else:
-            slack.post(webhook, msg)
-            time.sleep(SLACK_POST_INTERVAL)
+        deliver(webhooks, slack.build_message(listing, source.label), dry_run)
         # Mark per-post so a crash mid-batch doesn't re-post earlier jobs.
         state.mark_seen(source.key, [listing["id"]])
 
@@ -72,14 +87,9 @@ def replay(source: Source, count: int, dry_run: bool) -> None:
     """Re-post the newest `count` postable listings. Ignores and doesn't touch state."""
     listings, _ = fetch_listings(source, None)
     newest = sorted((l for l in listings if is_postable(l)), key=lambda l: l.get("date_posted") or 0)[-count:]
-    webhook = webhook_for(source)
+    webhooks = webhooks_for(source)
     for listing in newest:
-        msg = slack.build_message(listing, source.label)
-        if dry_run or not webhook:
-            log.info("[dry-run] %s", msg["text"])
-        else:
-            slack.post(webhook, msg)
-            time.sleep(SLACK_POST_INTERVAL)
+        deliver(webhooks, slack.build_message(listing, source.label), dry_run)
     log.info("%s: replayed %d listings", source.key, len(newest))
 
 
@@ -87,7 +97,7 @@ def run(once: bool, dry_run: bool) -> None:
     state = State(os.environ.get("STATE_DB", "jobwatch.db"))
     interval = int(os.environ.get("POLL_INTERVAL_SECONDS", "120"))
     for source in SOURCES:
-        if not dry_run and not webhook_for(source):
+        if not dry_run and not webhooks_for(source):
             log.warning("%s: no Slack webhook configured; messages will only be logged", source.key)
 
     while True:
