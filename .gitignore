@@ -1,0 +1,17 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime state / logs
+data/
+state/
+*.db
+*.log
+
+# Slack CLI local app bindings, credentials cache
+.slack/apps.dev.json
+.slack/apps.json
+.slack/cache/
+
+__pycache__/

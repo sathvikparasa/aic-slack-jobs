@@ -1,0 +1,44 @@
+name: jobwatch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # GitHub's minimum; runs are often delayed 5-15 min
+  workflow_dispatch:
+
+# Never run two polls at once; they'd race on the state DB and double-post.
+concurrency:
+  group: jobwatch
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      STATE_DB: state/jobwatch.db
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      SLACK_WEBHOOK_URL_INTERN: ${{ secrets.SLACK_WEBHOOK_URL_INTERN }}
+      SLACK_WEBHOOK_URL_NEWGRAD: ${{ secrets.SLACK_WEBHOOK_URL_NEWGRAD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # State lives in the Actions cache. Caches are immutable, so each run saves
+      # under a new key and restores the newest one by prefix. If the cache is ever
+      # evicted, the next run silently re-seeds instead of spamming old jobs.
+      - uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: jobwatch-state-${{ github.run_id }}
+          restore-keys: jobwatch-state-
+
+      - run: mkdir -p state && python -m jobwatch.main --once
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state
+          key: jobwatch-state-${{ github.run_id }}-${{ github.run_attempt }}
