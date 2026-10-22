@@ -1,0 +1,29 @@
+{
+  "_metadata": {
+    "major_version": 1,
+    "minor_version": 1
+  },
+  "display_information": {
+    "name": "Internships and New Grad Job Alerts",
+    "description": "Automated job opportunity postings for ASUCD Innovation & Research Lab Software Developers.",
+    "background_color": "#1d4ed8"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Internships and New Grad Job Alerts",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "incoming-webhook"
+      ]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
