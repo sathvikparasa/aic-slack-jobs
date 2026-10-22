@@ -68,6 +68,21 @@ def check_source(source: Source, state: State, dry_run: bool) -> None:
     state.set_etag(source.key, etag)
 
 
+def replay(source: Source, count: int, dry_run: bool) -> None:
+    """Re-post the newest `count` postable listings. Ignores and doesn't touch state."""
+    listings, _ = fetch_listings(source, None)
+    newest = sorted((l for l in listings if is_postable(l)), key=lambda l: l.get("date_posted") or 0)[-count:]
+    webhook = webhook_for(source)
+    for listing in newest:
+        msg = slack.build_message(listing, source.label)
+        if dry_run or not webhook:
+            log.info("[dry-run] %s", msg["text"])
+        else:
+            slack.post(webhook, msg)
+            time.sleep(SLACK_POST_INTERVAL)
+    log.info("%s: replayed %d listings", source.key, len(newest))
+
+
 def run(once: bool, dry_run: bool) -> None:
     state = State(os.environ.get("STATE_DB", "jobwatch.db"))
     interval = int(os.environ.get("POLL_INTERVAL_SECONDS", "120"))
@@ -90,11 +105,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="run a single poll cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="log messages instead of posting to Slack")
+    parser.add_argument("--replay", type=int, metavar="N", help="re-post the N newest listings per source and exit")
     args = parser.parse_args()
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    if args.replay:
+        for source in SOURCES:
+            replay(source, args.replay, args.dry_run)
+        return
     run(args.once, args.dry_run)
 
 

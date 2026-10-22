@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "*/5 * * * *"  # GitHub's minimum; runs are often delayed 5-15 min
   workflow_dispatch:
+    inputs:
+      replay:
+        description: "Re-post the N newest listings per board (end-to-end test; 0 = normal poll)"
+        default: "0"
 
 # Never run two polls at once; they'd race on the state DB and double-post.
 concurrency:
@@ -29,6 +33,12 @@ jobs:
       # State lives in the Actions cache. Caches are immutable, so each run saves
       # under a new key and restores the newest one by prefix. If the cache is ever
       # evicted, the next run silently re-seeds instead of spamming old jobs.
+      - name: Replay (test)
+        if: github.event.inputs.replay && github.event.inputs.replay != '0'
+        env:
+          REPLAY: ${{ github.event.inputs.replay }}
+        run: python -m jobwatch.main --replay "$REPLAY"
+
       - uses: actions/cache/restore@v4
         with:
           path: state

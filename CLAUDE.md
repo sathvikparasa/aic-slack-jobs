@@ -15,6 +15,7 @@ python3 -m jobwatch.main --once --dry-run   # one live poll, log messages instea
 python3 -m jobwatch.main                    # run forever
 docker compose up -d --build                # alternative self-hosted deployment (reads .env, state in ./data)
 gh workflow run jobwatch                    # trigger a production poll now
+gh workflow run jobwatch -f replay=1        # end-to-end test: re-post newest job per board (state untouched)
 ```
 
 Configuration comes from environment variables (see `.env.example`): `SLACK_WEBHOOK_URL`, the optional per-source overrides `SLACK_WEBHOOK_URL_<KEY>` (where KEY is `Source.key` uppercased), `POLL_INTERVAL_SECONDS`, `MAX_AGE_HOURS`, `STATE_DB`, and `LOG_LEVEL`.
